@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股投資記帳（手機版）</title>
+<style>
+:root{
+  --bg:#f5f6fa;
+  --card:#ffffff;
+  --primary:#1f3a5f;
+  --buy:#2c6bed;
+  --sell:#d64545;
+  --pos:#1a7f37;
+  --neg:#c0392b;
+  --text:#333;
+  --muted:#777;
+  --btn:#1f3a5f;
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--bg);
+  margin:0;padding:10px;color:var(--text);
+}
+h2{margin:10px 0;color:var(--primary);font-size:18px;}
+.card{
+  background:var(--card);
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:12px;
+  box-shadow:0 6px 15px rgba(0,0,0,.06);
+}
+input,select,button,textarea{
+  width:100%;
+  padding:8px;
+  margin:5px 0;
+  border-radius:8px;
+  border:1px solid #ddd;
+  font-size:14px;
+}
+textarea{resize:none}
+button{background:var(--btn);color:#fff;border:none;font-weight:600;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{border-bottom:1px solid #eee;padding:6px;text-align:center;}
+.buy{color:var(--buy);}
+.sell{color:var(--sell);}
+.pos{color:var(--pos); font-weight:600;}
+.neg{color:var(--neg); font-weight:600;}
+.muted{color:var(--muted);}
+.badge{font-size:11px;padding:2px 6px;border-radius:999px;background:#eee;}
+</style>
+</head>
+<body>
+
+<!-- 資金與股息 -->
+<div class="card">
+<h2>💰 資金與股息</h2>
+<input type="number" id="deposit" placeholder="存入資金">
+<button onclick="addDeposit()">存入資金</button>
+
+<input type="number" id="dividend" placeholder="股息收入">
+<textarea id="divNote" placeholder="股息備註（可空白）"></textarea>
+<button onclick="addDividend()">新增股息</button>
+
+<p class="muted">目前餘額：<b id="balance">0</b></p>
+<p class="muted">累計股息：<b id="divTotal">0</b></p>
+<p class="muted">股息月收入：<b id="divMonth">0</b>，年收入：<b id="divYear">0</b></p>
+</div>
+
+<!-- 新增交易 -->
+<div class="card">
+<h2>📈 新增交易</h2>
+<input type="date" id="date">
+<input type="text" id="stock" placeholder="股票代號">
+<select id="term">
+  <option value="短期">短期</option>
+  <option value="長期">長期</option>
+</select>
+<select id="type">
+  <option value="買">買</option>
+  <option value="賣">賣</option>
+</select>
+<input type="number" id="shares" placeholder="股數">
+<input type="number" id="price" placeholder="成交價">
+<input type="number" id="tax" placeholder="手動稅金">
+<p class="muted" style="font-size:12px;">貼士：歷史稅金 = 成交金額 x 0.3% (證交稅) + 手續費 x 0.1425%</p>
+<textarea id="note" placeholder="備註（策略、想法）"></textarea>
+<button onclick="addTrade()">新增交易</button>
+</div>
+
+<!-- 交易紀錄 -->
+<div class="card">
+<h2>📋 交易紀錄</h2>
+<table>
+<thead>
+<tr>
+<th>日期</th><th>股票</th><th>類型</th><th>短/長期</th><th>股數</th><th>成交價</th><th>稅金</th><th>總金額</th><th>備註</th>
+</tr>
+</thead>
+<tbody id="records"></tbody>
+</table>
+</div>
+
+<!-- 持股成本 / 未實現損益 -->
+<div class="card">
+<h2>📊 持股成本 / 未實現損益</h2>
+<table>
+<thead>
+<tr>
+<th>股票</th><th>持股股數</th><th>成本</th><th>未實現損益</th>
+</tr>
+</thead>
+<tbody id="holding"></tbody>
+</table>
+</div>
+
+<!-- 選取股票查看歷史損益與股息 -->
+<div class="card">
+<h2>🔍 股票總損益 & 股息</h2>
+<select id="stockSelect" onchange="showStockSummary()">
+<option value="">請選擇股票</option>
+</select>
+<p>已實現 + 未實現損益：<b id="stockProfit">0</b></p>
+<p>股息月收入：<b id="stockDivMonth">0</b>，年收入：<b id="stockDivYear">0</b></p>
+</div>
+
+<!-- 匯出 Excel -->
+<div class="card">
+<h2>📊 報表</h2>
+<button onclick="exportExcel()">匯出 Excel</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+let data = JSON.parse(localStorage.getItem("stockBook")) || {balance:0, dividend:0, trades:[]};
+date.valueAsDate = new Date();
+
+function save(){localStorage.setItem("stockBook", JSON.stringify(data));}
+function addDeposit(){let v=+deposit.value;if(!v)return;data.balance+=v;deposit.value="";save();render();}
+function addDividend(){let v=+dividend.value;if(!v)return;let d=new Date();data.balance+=v;data.dividend+=v;data.trades.push({d:d.toISOString().slice(0,10),s:"股息",t:"收入",term:"-",sh:0,p:0,tax:0,total:v,n:divNote.value});dividend.value="";divNote.value="";save();render();}
+function addTrade(){let d=date.value,s=stock.value,termV=term.value,t=type.value,sh=+shares.value,p=+price.value,tx=+tax.value;if(!d||!s||!sh||!p)return;let amt=sh*p,total=(t==="買"?amt:-amt)+tx;data.balance-=total;data.trades.push({d,s,t,term:termV,sh,p,tax:tx,total,n:note.value});stock.value=shares.value=price.value=tax.value=note.value="";save();render();}
+function render(){
+  balance.innerText=data.balance;
+  divTotal.innerText=data.dividend;
+  let divMonth=0,divYear=0;
+  let now=new Date();
+  data.trades.forEach(x=>{if(x.s==="股息"){let dt=new Date(x.d);if(dt.getFullYear()===now.getFullYear()) divYear+=x.total;if(dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear()) divMonth+=x.total;}});
+  divMonthElem=document.getElementById("divMonth"); divYearElem=document.getElementById("divYear");
+  divMonthElem.innerText=divMonth.toFixed(2); divYearElem.innerText=divYear.toFixed(2);
+
+  let r="";data.trades.forEach(x=>{r+=`<tr><td>${x.d.slice(5)}</td><td>${x.s}</td><td class="${x.t==="買"?"buy":x.t==="賣"?"sell":"pos"}">${x.t}</td><td><span class="badge">${x.term||"-"}</span></td><td>${x.sh}</td><td>${x.p}</td><td>${x.tax}</td><td>${x.total}</td><td>${x.n}</td></tr>`;});
+  records.innerHTML=r;
+
+  let hold={},holdingHtml="";
+  data.trades.forEach(x=>{if(x.s==="股息") return;if(!hold[x.s]) hold[x.s]={qty:0,cost:0};if(x.t==="買"){hold[x.s].cost=(hold[x.s].cost*hold[x.s].qty+x.p*x.sh)/(hold[x.s].qty+x.sh);hold[x.s].qty+=x.sh;}else if(x.t==="賣"){hold[x.s].qty-=x.sh;}});
+  for(let k in hold){let unReal=hold[k].qty*hold[k].cost;holdingHtml+=`<tr><td>${k}</td><td>${hold[k].qty}</td><td>${hold[k].cost.toFixed(2)}</td><td>${unReal.toFixed(2)}</td></tr>`;}
+  holding.innerHTML=holdingHtml;
+
+  let stockSelect=document.getElementById("stockSelect");
+  let stocks=[...new Set(data.trades.filter(x=>x.s!=="股息").map(x=>x.s))];
+  stockSelect.innerHTML=`<option value="">請選擇股票</option>`+stocks.map(x=>`<option value="${x}">${x}</option>`).join('');
+}
+function showStockSummary(){
+  let sel=document.getElementById("stockSelect").value;if(!sel){document.getElementById("stockProfit").innerText=0;document.getElementById("stockDivMonth").innerText=0;document.getElementById("stockDivYear").innerText=0;return;}
+  let profit=0,divMonth=0,divYear=0;let now=new Date();let qty=0,cost=0;
+  data.trades.forEach(x=>{
+    if(x.s===sel){if(x.t==="買"){cost=(cost*qty+x.p*x.sh)/(qty+x.sh);qty+=x.sh;}else if(x.t==="賣"){profit+=x.sh*(x.p-cost);qty-=x.sh;}}
+    if(x.s==="股息" && x.n.includes(sel)){let dt=new Date(x.d);if(dt.getFullYear()===now.getFullYear()) divYear+=x.total;if(dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear()) divMonth+=x.total;}
+  });
+  profit+=qty*cost;
+  document.getElementById("stockProfit").innerText=profit.toFixed(2);
+  document.getElementById("stockDivMonth").innerText=divMonth.toFixed(2);
+  document.getElementById("stockDivYear").innerText=divYear.toFixed(2);
+}
+function exportExcel(){
+  let wb=XLSX.utils.book_new();
+  let tradeData=[["日期","股票","類型","短/長期","股數","成交價","稅金","總金額","備註"]];
+  data.trades.forEach(x=>tradeData.push([x.d,x.s,x.t,x.term,x.sh,x.p,x.tax,x.total,x.n]));
+  let ws=XLSX.utils.aoa_to_sheet(tradeData);
+  XLSX.utils.book_append_sheet(wb,ws,"交易紀錄");
+  XLSX.writeFile(wb,"stock_record.xlsx");
+}
+render();
+</script>
+</body>
+</html>
